@@ -3,17 +3,21 @@ const nodemailer = require('nodemailer');
 
 const router = express.Router();
 
+// Configuración SMTP explícita de Gmail (más estable en la nube que "service: gmail").
+// El App Password se limpia de espacios (Gmail lo muestra en bloques de 4).
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true,
   auth: {
     user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_APP_PASSWORD,
+    pass: String(process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, ''),
   },
 });
 
 // Registro en memoria de envíos ya procesados (clave: requestId del cliente).
 // Evita correos duplicados cuando el frontend reintenta un envío de la cola
-// offline tras haber agotado su timeout (p. ej. cold start de Render).
+// offline tras haber agotado su timeout (p. ej. cold start).
 const processedRequests = new Map();
 const PROCESSED_REQUEST_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -73,6 +77,10 @@ router.post('/', async (req, res) => {
   if (!recipientEmail) return res.status(400).json({ error: 'recipientEmail es requerido.' });
   if (!reportHtml)     return res.status(400).json({ error: 'reportHtml es requerido.' });
   const recipientCount = recipientEmail.split(',').length;
+
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+    return res.status(500).json({ error: 'Falta GMAIL_USER / GMAIL_APP_PASSWORD en las variables de entorno.' });
+  }
 
   pruneProcessedRequests();
   const isDuplicate = requestId && processedRequests.has(requestId);
